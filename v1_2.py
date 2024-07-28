@@ -1,13 +1,16 @@
 import streamlit as st
+from openai import OpenAI
+import os 
+import json
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
-from openai import OpenAI
-import os
 
-# Load your OpenAI API key
+# Initialize OpenAI client
 api_key = os.getenv('OPENAI_API_KEY')
 client = OpenAI(api_key=api_key)
 
+# Function definitions (as provided, unaltered)
 def scrape_url(url):
     response = requests.get(url)
     if response.status_code != 200:
@@ -17,211 +20,156 @@ def scrape_url(url):
     meta_description = soup.find('meta', attrs={'name': 'description'})
     meta_description = meta_description['content'] if meta_description else 'No meta description found'
     body = soup.get_text(separator='\n') if soup.body else 'No body content found'
-    return title, meta_description, body
+    return title, meta_description, body.replace('\n','')[:1500]
 
-def generate_title_and_article(example_text, keyword):
-    prompt = f"""
-    Based on the following example markdown text and the primary keyword, generate a suitable title and an article body.
+def create_custom_tags(results, example_content):
+    system_prompt = f"""
+    You are an expert article editor.
+    Your task is to use the results and information from 5 websites given by the user to return the following to the user for the newly created article. 
+    Based on findings create custom tags at the top of content, such as title, meta description, article schema.
+    We will also give you a sample markdown file in the format the user wants. You have to give us a sample output using this information.
+    This is a very important task, so you must definitely fulfill the tasks given to you.
+    This is a task where you have no chance of making mistakes, so please do not rush and use all the time you need.
 
-    Example Text:
-    {example_text}
+    5 other website Result: {results}
 
-    Primary Keyword: {keyword}
+    Example Content format: {example_content}
 
-    Title and Article:
+    You need to thoroughly understand the Example format given to you. I want you to return me a: custom tags at the top of content, such as title, meta description, article schema. using the sample format.
+    
+    You need to return all of this information you created in JSON format. I want you to create a suitable format and always return it in this format.
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Based on findings create custom tags at the top of content, such as title, meta description, article schema"},
+        ]
+    )
+    return json.loads(response.choices[0].message.content)
+
+def intro_paragraph(custom_tags, my_content, keyword):
+    system_prompt = f"""
+    You are an expert article writer.
+    Your job is to thoroughly review the article I created and then create an introductory paragraph using information from other websites.
+    You will be given a keyword and I want you to create a very well-written introductory paragraph using the article I created and information from sample websites.
+    This is a very important task and you should never make mistakes. So never rush through this process and you can be as slow as you want.
+
+    Custom tags: {custom_tags},
+
+    My Content: {my_content},
+
+    Keyword: {keyword}
     """
     response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "You are an expert assistant. Your job is to create a professional title and article for users. Here you have to understand the sample text and keyword values ​​given to you thoroughly and create a new title and article without changing the meaning in response to the values ​​coming from the user."},
-                        {"role": "user", "content": prompt},
-                    ]
-                )
-    response_json = response.choices[0].message.content
-    return response_json
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "You have to create an introduction paragraph for me using all the information given to you."},
+        ]
+    )
+    return response.choices[0].message.content
 
-def generate_custom_tags(article, keyword, competitor_data):
-    prompt = f"""
-    Based on the following article and competitor data, create custom tags such as title, meta description, and article schema.
+def implement_contents(intro_paragraph, custom_tags, keyword, my_content, example_format):
+    system_prompt = f"""
+    Your task is to create the content in the appropriate format and order.
+    In this task, you will be given all the necessary information, you just have to use it in the appropriate format and correctly.
 
-    Article:
-    {article}
+    We created an introductory paragraph using the text written by the user and his information. Here, you have to use the introductory paragraph in the correct format.
 
-    Primary Keyword: {keyword}
+    At the same time, the user himself gave us a keyword information, in short, you can think of it as a keyword theme.
 
-    Competitor Data:
-    {competitor_data}
+    By scanning the 5 sample sites we received from the user, a lot of information from those sites will be given to you at the same time. This information will be very useful for you for sample content.
 
-    Custom Tags:
+    Finally, I will give you a sample document for which format you should output. You need to examine this markdown file very, very well and understand its format very well. Because you can only output to the user in this format. You cannot output in any other format.
+
+    You absolutely have to complete these tasks given to you without any errors. Therefore, never rush and never make mistakes.
+
+    Keyword: {keyword},
+
+    Intro Paragraph: {intro_paragraph},
+
+    Custom Tags: {custom_tags},
+
+    User Content: {my_content},
+
+    Example Format you follow the structure: {example_format}
     """
     response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "Your task is to create custom tag words for the new article using the article and keyword values ​​you received from the user and the information from competitor sites. It is very important that it is SEO compatible and you have to reach a conclusion after evaluating the information you receive very well."},
-                        {"role": "user", "content": prompt},
-                    ]
-                )
-    response_json = response.choices[0].message.content
-    return response_json
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "implement table of contents, key takeaways and faqs using the same html formatting as the examples markdown files."},
+        ]
+    )
+    return response.choices[0].message.content
 
-def generate_intro_paragraph(article, keyword, competitor_data):
-    prompt = f"""
-    Based on the following article and competitor data, write an engaging introduction paragraph.
+def final_structured(final_format, example_format):
+    system_prompt = f"""
+    Your job is to provide formatting order.
+    There is a markdown text that we created for the user and at the same time the user gave us a markdown file with a sample format. By looking at the format of this sample file, you need to ensure that the newly created markdown value has the same structure as the sample markdown text and be 100% sure.
 
-    Article:
-    {article}
+    First of all, you need to examine the markdown text that we created for the user given to you.
+    For the second step, you need to examine and understand the markdown file that we gave for the sample format.
+    As the third and last step, make sure that the two values ​​have the same format, if you think they are different, edit the value we created for the user in the appropriate format.
+    Here, do not ever, ever mix the content of the sample markdown with the content of the markdown value generated for the user.
+    You only have to look at the structure and compare.
+    You can never, ever make a mistake in this regard. Please do not rush. Spend all the time you need.
+    Don't leave any comment or You can not add let's start or something like that. Just Return Markdown Text and That's all. Just Return Markdown Text and That's all. Just Return Markdown Text and That's all. 
 
-    Primary Keyword: {keyword}
+    User Markdown Text: {final_format},
 
-    Competitor Data:
-    {competitor_data}
-
-    Introduction Paragraph:
+    Example structure format markdown: {example_format}
     """
     response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "Your task is to write an intro paragraph using the information from the users, the article, keywords, and competitor pages. While writing this text, you have to preserve all the information and meaning and always write in a way that helps the user."},
-                        {"role": "user", "content": prompt},
-                    ]
-                )
-    response_json = response.choices[0].message.content
-    return response_json
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Verify that the markdown text I created for the user is in the correct format with the sample markdown text I gave. If there is an error in the structure, correct it."},
+        ]
+    )
+    return response.choices[0].message.content
 
-def generate_toc_key_takeaways_faqs(article, keyword, competitor_data):
-    prompt = f"""
-    Based on the following article and competitor data, create a table of contents, key takeaways, and FAQs using the same HTML formatting as the example markdown file.
-
-    Article:
-    {article}
-
-    Primary Keyword: {keyword}
-
-    Competitor Data:
-    {competitor_data}
-
-    Table of Contents, Key Takeaways, and FAQs:
-    """
-    response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "Your task is to create a table of contents, key takeaways, and FAQs using the information provided and formatted in HTML."},
-                        {"role": "user", "content": prompt},
-                    ]
-                )
-    response_json = response.choices[0].message.content
-    return response_json
-
-def assemble_markdown(custom_tags, intro_paragraph, toc_key_takeaways_faqs, article):
-    author = "Tom & Jess"  # Dynamic or default value
-    date_published = "2024-06-11"  # Dynamic or default value
-    date_modified = "2024-06-17"  # Dynamic or default value
-
-    markdown_content = f"""
-@metadata
-- Author: {author}
-- Date Published: {date_published}
-- Date Modified: {date_modified}
-
-@schema
-{custom_tags}
-@endmetadata
-
-@toc
-{toc_key_takeaways_faqs}
-@endtoc
-
-# {article['title']}
-
-## Introduction
-{intro_paragraph}
-
-## Sections
-{article['body']}
-
-## Frequently Asked Questions
-"""
-    return markdown_content
-
+# Streamlit App
 def main():
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Input Page", "Result Page"])
+    st.title("Custom Article Generator")
 
-    if page == "Input Page":
-        st.title("Markdown Content Generator")
+    # User inputs
+    # example_markdown = st.text_area("Example Markdown Content", height=200)
+    with open('20240611-190000_best-boiler-installers-uk (1).md','r') as file:
+        example_markdown = file.read()
+    user_markdown = st.text_area("Your Article Markdown Content", height=200)
+    keyword = st.text_input("Primary Keyword")
+    urls = st.text_area("Competitor URLs (one per line)").split('\n')
 
-        if 'example_text' not in st.session_state:
-            st.session_state['example_text'] = ""
-        if 'keyword' not in st.session_state:
-            st.session_state['keyword'] = ""
-        if 'competitor_urls' not in st.session_state:
-            st.session_state['competitor_urls'] = ""
+    if st.button("Generate Article"):
+        results = {}
 
-        example_text = st.text_area("Enter example markdown text:", height=300, value=st.session_state['example_text'])
-        keyword = st.text_input("Enter the primary keyword:", value=st.session_state['keyword'])
-        competitor_urls = st.text_area("Enter up to 5 competitor URLs, separated by commas:", value=st.session_state['competitor_urls'])
-
-        if st.button("Generate Content"):
-            st.session_state['example_text'] = example_text
-            st.session_state['keyword'] = keyword
-            st.session_state['competitor_urls'] = competitor_urls
-
-            competitor_urls_list = [url.strip() for url in competitor_urls.split(",") if url.strip()]
-
-            competitor_data = []
-            for url in competitor_urls_list:
-                title, meta_description, body = scrape_url(url)
-                competitor_data.append({
-                    'url': url,
-                    'title': title,
-                    'meta_description': meta_description,
-                    'body': body
-                })
-
-            article_content = generate_title_and_article(example_text, keyword)
-            article = {
-                'title': article_content.split("\n")[0],  # assuming the title is the first line
-                'body': "\n".join(article_content.split("\n")[1:])  # the rest is the body
+        for url in urls:
+            title, meta_description, body = scrape_url(url)
+            results[url] = {
+                'title': title,
+                'meta_description': meta_description,
+                'body': body
             }
 
-            custom_tags = generate_custom_tags(article['body'], keyword, competitor_data)
-            intro_paragraph = generate_intro_paragraph(article['body'], keyword, competitor_data)
-            toc_key_takeaways_faqs = generate_toc_key_takeaways_faqs(article['body'], keyword, competitor_data)
+        run2 = create_custom_tags(results, example_markdown)
+        run3 = intro_paragraph(run2, user_markdown, keyword)
+        run4 = implement_contents(run3, run2, keyword, user_markdown, example_markdown)
+        final_result = final_structured(run4, example_markdown)
 
-            full_content = assemble_markdown(custom_tags, intro_paragraph, toc_key_takeaways_faqs, article)
+        st.markdown("### Generated Article")
+        st.markdown(final_result)
 
-            # Store the results individually in the session state
-            st.session_state['custom_tags'] = custom_tags
-            st.session_state['intro_paragraph'] = intro_paragraph
-            st.session_state['toc_key_takeaways_faqs'] = toc_key_takeaways_faqs
-            st.session_state['full_content'] = full_content
-
-            st.success("Content generated! Go to the Result Page to see the results.")
-
-    elif page == "Result Page":
-        st.title("Generated Full Structured Markdown Content")
-
-        if 'full_content' in st.session_state:
-            st.markdown("## Custom Tags")
-            st.markdown(st.session_state['custom_tags'])
-
-            st.markdown("## Introduction Paragraph")
-            st.markdown(st.session_state['intro_paragraph'])
-
-            st.markdown("## Table of Contents, Key Takeaways, and FAQs")
-            st.markdown(st.session_state['toc_key_takeaways_faqs'])
-
-            st.markdown("## Full Content")
-            st.markdown(st.session_state['full_content'])
-
-            st.sidebar.download_button(
-                label="Download the structured markdown file",
-                data=st.session_state['full_content'],
-                file_name="structured_content.md",
-                mime="text/markdown"
-            )
-        else:
-            st.warning("No content generated yet. Please go to the Input Page to generate content.")
+        # Adding download button for the markdown file
+        st.download_button(
+            label="Download Markdown",
+            data=final_result,
+            file_name='generated_article.md',
+            mime='text/markdown'
+        )
 
 if __name__ == "__main__":
     main()
