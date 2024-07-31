@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
-
+import time
 # Initialize OpenAI client
 api_key = os.getenv('OPENAI_API_KEY')
 client = OpenAI(api_key=api_key)
@@ -107,6 +107,9 @@ def implement_contents(intro_paragraph, custom_tags, keyword, my_content, exampl
     return response.choices[0].message.content
 
 def final_structured(final_format, example_format):
+    current_time = time.localtime()
+    current_date = time.strftime("%Y-%m-%d", current_time)
+
     system_prompt = f"""
     Your job is to provide formatting order.
     There is a markdown text that we created for the user and at the same time the user gave us a markdown file with a sample format. By looking at the format of this sample file, you need to ensure that the newly created markdown value has the same structure as the sample markdown text and be 100% sure.
@@ -116,6 +119,10 @@ def final_structured(final_format, example_format):
     As the third and last step, make sure that the two values ​​have the same format, if you think they are different, edit the value we created for the user in the appropriate format.
     Here, do not ever, ever mix the content of the sample markdown with the content of the markdown value generated for the user.
     You only have to look at the structure and compare.
+    1. author tag at top of article should always just be 'Tom & Jess'.
+    Use updated Date in structure: {current_date}
+
+    Don't change the article structure too much.
     You can never, ever make a mistake in this regard. Please do not rush. Spend all the time you need.
     Don't leave any comment or You can not add let's start or something like that. Just Return Markdown Text and That's all. Just Return Markdown Text and That's all. Just Return Markdown Text and That's all. 
 
@@ -132,44 +139,101 @@ def final_structured(final_format, example_format):
     )
     return response.choices[0].message.content
 
-# Streamlit App
+
+
+
 def main():
-    st.title("Custom Article Generator")
+    # st.set_page_config(page_title="Custom Article Generator", layout="centered")
 
-    # User inputs
-    # example_markdown = st.text_area("Example Markdown Content", height=200)
-    with open('20240611-190000_best-boiler-installers-uk (1).md','r') as file:
-        example_markdown = file.read()
-    user_markdown = st.text_area("Your Article Markdown Content", height=200)
-    keyword = st.text_input("Primary Keyword")
-    urls = st.text_area("Competitor URLs (one per line)").split('\n')
+    # Sidebar with page selection
+    page = st.sidebar.selectbox("Select a page", ["Main Page", "Result Page", "ChatAI"])
 
-    if st.button("Generate Article"):
-        results = {}
+    if page == "Main Page":
+        st.title("Custom Article Generator")
 
-        for url in urls:
-            title, meta_description, body = scrape_url(url)
-            results[url] = {
-                'title': title,
-                'meta_description': meta_description,
-                'body': body
-            }
+        # User inputs
+        with open('20240611-190000_best-boiler-installers-uk (1).md', 'r') as file:
+            example_markdown = file.read()
+        
+        user_markdown = st.text_area("Your Article Markdown Content", height=200)
+        keyword = st.text_input("Primary Keyword")
+        urls = st.text_area("Competitor URLs (one per line)").split('\n')
 
-        run2 = create_custom_tags(results, example_markdown)
-        run3 = intro_paragraph(run2, user_markdown, keyword)
-        run4 = implement_contents(run3, run2, keyword, user_markdown, example_markdown)
-        final_result = final_structured(run4, example_markdown)
+        if st.button("Generate Article"):
+            results = {}
 
-        st.markdown("### Generated Article")
-        st.markdown(final_result)
+            for url in urls:
+                title, meta_description, body = scrape_url(url)
+                results[url] = {
+                    'title': title,
+                    'meta_description': meta_description,
+                    'body': body
+                }
 
-        # Adding download button for the markdown file
-        st.download_button(
-            label="Download Markdown",
-            data=final_result,
-            file_name='generated_article.md',
-            mime='text/markdown'
-        )
+            run2 = create_custom_tags(results, example_markdown)
+            run3 = intro_paragraph(run2, user_markdown, keyword)
+            run4 = implement_contents(run3, run2, keyword, user_markdown, example_markdown)
+            final_result = final_structured(run4, example_markdown)
+
+            st.session_state['final_result'] = final_result
+
+    elif page == "Result Page":
+        st.title("Result Page")
+        if 'final_result' in st.session_state:
+            st.markdown("### Generated Article")
+            st.markdown(st.session_state['final_result'])
+
+            # Adding download button for the markdown file
+            st.download_button(
+                label="Download Markdown",
+                data=st.session_state['final_result'],
+                file_name='generated_article.md',
+                mime='text/markdown'
+            )
+        else:
+            st.markdown("### No article generated yet.")
+
+    elif page == "ChatAI":
+        st.title("ChatAI")
+        if 'final_result' in st.session_state:
+            st.markdown("### Generated Article")
+            # st.markdown(st.session_state['final_result'])
+
+            # ChatAI interface
+            # client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+            if "openai_model" not in st.session_state:
+                st.session_state["openai_model"] = "gpt-4o"
+
+            if "messages" not in st.session_state:
+                st.session_state.messages = []
+
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+
+            if 'system_info' not in st.session_state:
+                st.session_state.messages.append({"role": "system", "content": st.session_state['final_result']})
+                
+
+            if prompt := st.chat_input("What is up?"):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+
+                with st.chat_message("assistant"):
+                    stream = client.chat.completions.create(
+                        model=st.session_state["openai_model"],
+                        messages=[
+                            {"role": m["role"], "content": m["content"]}
+                            for m in st.session_state.messages
+                        ],
+                        stream=True,
+                    )
+                    response = st.write_stream(stream)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+        else:
+            st.markdown("### No article generated yet.")
 
 if __name__ == "__main__":
     main()
