@@ -73,6 +73,9 @@ def intro_paragraph(custom_tags, my_content, keyword):
     return response.choices[0].message.content
 
 def implement_contents(intro_paragraph, custom_tags, keyword, my_content, example_format):
+    current_time = time.localtime()
+    current_date = time.strftime("%Y-%m-%d", current_time)
+
     system_prompt = f"""
     Your task is to create the content in the appropriate format and order.
     In this task, you will be given all the necessary information, you just have to use it in the appropriate format and correctly.
@@ -86,6 +89,15 @@ def implement_contents(intro_paragraph, custom_tags, keyword, my_content, exampl
     Finally, I will give you a sample document for which format you should output. You need to examine this markdown file very, very well and understand its format very well. Because you can only output to the user in this format. You cannot output in any other format.
 
     You absolutely have to complete these tasks given to you without any errors. Therefore, never rush and never make mistakes.
+
+    Those Steps Always should be apply:
+    1. author tag at top of article should always just be 'Tom & Jess'.
+    2. Use updated Date in structure: {current_date}
+    3. cta tag should always be either 'solar' or 'boiler'
+    4. "points" under @hero tag should not be changed
+    5.  article schema urls should always be glowgreenltd.com/...
+    6. table of contents should be limited to 8 headers (prioritise h2)
+    7. blockquotes added incorrectly. Should be attributed to statistical / data / did you know... short and punchy sentence only.
 
     Keyword: {keyword},
 
@@ -119,8 +131,14 @@ def final_structured(final_format, example_format):
     As the third and last step, make sure that the two values ​​have the same format, if you think they are different, edit the value we created for the user in the appropriate format.
     Here, do not ever, ever mix the content of the sample markdown with the content of the markdown value generated for the user.
     You only have to look at the structure and compare.
+    Those Steps Always should be apply:
     1. author tag at top of article should always just be 'Tom & Jess'.
-    Use updated Date in structure: {current_date}
+    2. Use updated Date in structure: {current_date}
+    3. cta tag should always be either 'solar' or 'boiler'
+    4. "points" under @hero tag should not be changed
+    5.  article schema urls should always be glowgreenltd.com/...
+    6. table of contents should be limited to 8 headers (prioritise h2)
+    7. blockquotes added incorrectly. Should be attributed to statistical / data / did you know... short and punchy sentence only.
 
     Don't change the article structure too much.
     You can never, ever make a mistake in this regard. Please do not rush. Spend all the time you need.
