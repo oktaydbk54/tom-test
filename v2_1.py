@@ -98,6 +98,9 @@ def implement_contents(intro_paragraph, custom_tags, keyword, my_content, exampl
     5.  article schema urls should always be glowgreenltd.com/...
     6. table of contents should be limited to 8 headers (prioritise h2)
     7. blockquotes added incorrectly. Should be attributed to statistical / data / did you know... short and punchy sentence only.
+    8. "points" under @hero tag should not be changed
+    9. article schema name should always be Glow Green
+    10. Title is an exact replicate of a competitor
 
     Keyword: {keyword},
 
@@ -139,6 +142,9 @@ def final_structured(final_format, example_format):
     5.  article schema urls should always be glowgreenltd.com/...
     6. table of contents should be limited to 8 headers (prioritise h2)
     7. blockquotes added incorrectly. Should be attributed to statistical / data / did you know... short and punchy sentence only.
+    8. "points" under @hero tag should not be changed
+    9. article schema name should always be Glow Green
+    10. Title is an exact replicate of a competitor
 
     Don't change the article structure too much.
     You can never, ever make a mistake in this regard. Please do not rush. Spend all the time you need.
